@@ -29,7 +29,9 @@ export async function initializeProject(targetDir = ".") {
     path.join(sourceDir, "assets", DEFAULT_CONFIG.namespace, ".gitkeep"),
     "Place namespace assets in this folder.\n",
     { flag: "wx" }
-  );
+  ).catch((error) => {
+    if (error.code !== "EEXIST") throw error;
+  });
 
   await fs.writeFile(configPath, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n", { flag: "wx" });
 
