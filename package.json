@@ -1,0 +1,23 @@
+{
+  "name": "mtr-resource-packs-creator",
+  "version": "0.1.0",
+  "description": "A JavaScript automation framework for creating Minecraft Transit Railway resource packs.",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "mtr-pack": "src/cli.js"
+  },
+  "scripts": {
+    "init": "node src/cli.js init .",
+    "validate": "node src/cli.js validate",
+    "build": "node src/cli.js build",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1"
+  },
+  "license": "MIT"
+}
