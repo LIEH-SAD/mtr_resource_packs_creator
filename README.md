@@ -66,12 +66,31 @@
 `init` 会同时生成 IDE 运行配置，`ide` 命令可随时重新生成，让 WebStorm / IntelliJ 与 VS Code 的启动栏直接出现“构建”和“运行测试”按钮：
 
 - `.vscode/tasks.json`、`.vscode/launch.json`：VS Code 的 Run and Debug 面板与任务列表（launch.json 通过 Node 调试器直接运行 `src/cli.js`，可在 `src/` 内下断点）
-- `.vscode/settings.json`：打开共享任务中的自动执行许可，使导入项目时自动运行 `init`
+- `.vscode/settings.json`：打开共享任务中的自动执行许可（使导入项目时自动运行 `init`），并把 `syntax/schemas/` 下的 JSON Schema 映射到对应的 MTR 资源文件
+- `jsconfig.json`：把 `syntax/types/` 的声明文件纳入 JS 工程，让脚本获得 API 补全与类型报错
 - `.idea/runConfigurations/*.xml`：WebStorm / IntelliJ 的运行配置（npm 类型，随 VCS 共享，与 package.json 脚本联动）
+- `.idea/jsonSchemas.xml`：WebStorm / IntelliJ 的 JSON Schema 映射（随 VCS 共享）
 
 生成的动作与 npm 脚本一一对应：构建资源包（build）、下载测试客户端（setup）、安装资源包到测试客户端（install-pack）、启动测试客户端（launch）、运行单元测试（test）。重新执行 `npm run ide` 会原地刷新这些文件。
 
 导入项目时自动执行初始化由两条路径保证：VS Code 通过 `runOn: "folderOpen"` 的初始化任务，WebStorm / IntelliJ 通过导入后自动执行的 `npm install`（即 `prepare` 脚本）。两条路径都调用幂等的 `init --if-missing`，已初始化的项目会静默跳过。
+
+## 语法补全与报错
+
+`syntax/` 目录依据 NTE (A)NTE 官方文档仓库（[aphrodite281/mtr-ante docs](https://github.com/aphrodite281/mtr-ante/tree/alpha/docs)）整理了资源包 JSON 与脚本 API 的语法，供 IDE 提供补全和错误标注：
+
+- `syntax/schemas/`：JSON Schema（draft-07），用于 JSON 键名补全与取值校验报错
+  - `eyecandy.schema.json` → `assets/mtrsteamloco/eyecandies/*.json`
+  - `rail-model.schema.json` → `assets/mtrsteamloco/rails/*.json`
+  - `mtr-custom-resources.schema.json` → `mtr_custom_resources.json`
+- `syntax/types/`：TypeScript 全局声明文件，用于列车 / 装饰物件脚本的 API 补全与类型报错
+  - `mtrsteamloco-core.d.ts`：共享环境（`Resources`、`ComponentUtil`、数学类型、`ConfigResponder` 等）
+  - `mtrsteamloco-render.d.ts`：模型处理与绘制调用（`RawModel`、`ModelCluster`、`DrawCall` 等）
+  - `mtrsteamloco-scripts.d.ts`：脚本入口、`Train`/`BlockEntityEyeCandy`、`DisplayHelper`、`GraphicsTexture`
+
+`npm run ide` 会生成 `.vscode/settings.json`（`json.schemas`）、`.idea/jsonSchemas.xml` 与 `jsconfig.json`，让 VS Code 和 WebStorm / IntelliJ 自动加载上述语法：在对应 JSON 文件中输入键名会补全，写错键名或类型会立刻标红；脚本中可使用全局 API 补全，参数不匹配会给出类型报错。
+
+> 声明文件仅覆盖文档已记录的 API，未出现在文档中的成员不作声明。脚本运行于 Rhino 1.7.14（ES6，严格模式），且 MTR/NTE 返回的是 Java 字符串，取长度请用 `str.length()`。
 
 ## 测试客户端自动化
 
@@ -141,13 +160,16 @@ Minecraft 版本、Fabric Loader 版本、测试目录名以及要安装的模�
         archive.js              ZIP 压缩
         initializer.js          初始化项目（示例资源包 + IDE 配置）
         sample.js               生成示例资源包与占位目录
-        ide.js                  生成 VS Code / WebStorm 运行配置
+        ide.js                  生成 VS Code / WebStorm 运行配置与语法映射
         download.js            下载/校验/并发等通用工具
         environment.js         下载并组装 Minecraft + Fabric 测试环境
         installer.js            构建产物装入测试客户端并在 options.txt 中启用
         launcher.js             拼装启动参数并启动测试客户端
     tests/
       core.test.js              核心逻辑测试
+    syntax/
+      schemas/                  JSON Schema（资源包 JSON 的补全与校验）
+      types/                    脚本 API 的 TypeScript 全局声明文件
 
 构建流程：
 

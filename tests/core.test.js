@@ -115,12 +115,30 @@ test("IDE configurations expose build and test shortcuts", async () => {
 
     const settings = JSON.parse(await fs.readFile(path.join(temporaryRoot, ".vscode", "settings.json"), "utf8"));
     assert.equal(settings["task.allowAutomaticTasks"], "on");
+    assert.deepEqual(
+      settings["json.schemas"].map((entry) => entry.url),
+      [
+        "./syntax/schemas/eyecandy.schema.json",
+        "./syntax/schemas/rail-model.schema.json",
+        "./syntax/schemas/mtr-custom-resources.schema.json"
+      ]
+    );
+    assert.deepEqual(settings["json.schemas"][0].fileMatch, ["resource-pack/assets/mtrsteamloco/eyecandies/*.json"]);
+
+    const jsconfig = JSON.parse(await fs.readFile(path.join(temporaryRoot, "jsconfig.json"), "utf8"));
+    assert.equal(jsconfig.compilerOptions.checkJs, true);
+    assert.ok(jsconfig.include.includes("syntax/types/**/*.d.ts"));
+
+    const jsonSchemas = await fs.readFile(path.join(temporaryRoot, ".idea", "jsonSchemas.xml"), "utf8");
+    assert.match(jsonSchemas, /JsonSchemaMappingsProjectConfiguration/);
+    assert.match(jsonSchemas, /relativePathToSchema" value="syntax\/schemas\/eyecandy\.schema\.json"/);
+    assert.match(jsonSchemas, /mappingKind" value="Pattern"/);
 
     assert.equal(launch.configurations.length, 5);
     assert.ok(launch.configurations.some((config) => config.name === "MTR: Run test client"));
     assert.match(webstorm, /type="js\.build_tools\.npm"/);
     assert.match(webstorm, /<script value="build" \/>/);
-    assert.equal(result.files.length, 8);
+    assert.equal(result.files.length, 10);
   } finally {
     await fs.rm(temporaryRoot, { recursive: true, force: true });
   }

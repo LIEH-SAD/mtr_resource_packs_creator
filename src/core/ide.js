@@ -16,6 +16,34 @@ export const IDE_ACTIONS = [
 const LABEL_PREFIX = "MTR: ";
 const INIT_LABEL = LABEL_PREFIX + "Initialize project";
 
+// Syntax support shipped under syntax/: JSON Schemas drive key completion and
+// validation errors for the NTE resource-pack JSON files, and the TypeScript
+// declarations drive completion for the train/eyecandy scripts. The IDE files
+// below point each editor at those artefacts so authoring works out of the box.
+const SYNTAX_SCHEMA_MAPPINGS = [
+  {
+    id: "mtr-eyecandy",
+    name: "MTR Steam Loco eyecandy",
+    schema: "syntax/schemas/eyecandy.schema.json",
+    fileMatch: "resource-pack/assets/mtrsteamloco/eyecandies/*.json"
+  },
+  {
+    id: "mtr-rail-model",
+    name: "MTR Steam Loco rail model",
+    schema: "syntax/schemas/rail-model.schema.json",
+    fileMatch: "resource-pack/assets/mtrsteamloco/rails/*.json"
+  },
+  {
+    id: "mtr-custom-resources",
+    name: "MTR custom resources",
+    schema: "syntax/schemas/mtr-custom-resources.schema.json",
+    fileMatch: "**/mtr_custom_resources.json"
+  }
+];
+
+const SYNTAX_TYPES_GLOB = "syntax/types/**/*.d.ts";
+const SCRIPT_SOURCES_GLOB = "resource-pack/**/*.js";
+
 function actionName(action) {
   return LABEL_PREFIX + action.label;
 }
@@ -53,7 +81,66 @@ function vscodeTasks() {
 }
 
 function vscodeSettings() {
-  return { "task.allowAutomaticTasks": "on" };
+  return {
+    "task.allowAutomaticTasks": "on",
+    "json.schemas": SYNTAX_SCHEMA_MAPPINGS.map((mapping) => ({
+      fileMatch: [mapping.fileMatch],
+      url: "./" + mapping.schema
+    }))
+  };
+}
+
+// Let VS Code (and WebStorm, which honours jsconfig.json for JavaScript
+// projects) resolve the script API globals and report type errors in scripts.
+function vscodeJsConfig() {
+  return {
+    compilerOptions: {
+      target: "es2015",
+      lib: ["es2015"],
+      allowJs: true,
+      checkJs: true,
+      noEmit: true
+    },
+    include: [SYNTAX_TYPES_GLOB, SCRIPT_SOURCES_GLOB]
+  };
+}
+
+// Shareable IntelliJ / WebStorm JSON Schema mappings. Paths are relative to the
+// project root; the `Pattern` mapping kind matches the file globs VS Code uses.
+function intellijJsonSchemas() {
+  const entries = SYNTAX_SCHEMA_MAPPINGS.map((mapping) => [
+    '        <entry key="' + escapeXml(mapping.id) + '">',
+    "          <value>",
+    "            <SchemaInfo>",
+    '              <option name="name" value="' + escapeXml(mapping.name) + '" />',
+    '              <option name="relativePathToSchema" value="' + escapeXml(mapping.schema) + '" />',
+    '              <option name="patterns">',
+    "                <list>",
+    "                  <Item>",
+    '                    <option name="pattern" value="true" />',
+    '                    <option name="path" value="' + escapeXml(mapping.fileMatch) + '" />',
+    '                    <option name="mappingKind" value="Pattern" />',
+    "                  </Item>",
+    "                </list>",
+    "              </option>",
+    "            </SchemaInfo>",
+    "          </value>",
+    "        </entry>"
+  ].join("\n"));
+
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<project version="4">',
+    '  <component name="JsonSchemaMappingsProjectConfiguration">',
+    "    <state>",
+    "      <map>",
+    ...entries,
+    "      </map>",
+    "    </state>",
+    "  </component>",
+    "</project>",
+    ""
+  ].join("\n");
 }
 
 function vscodeLaunch() {
@@ -134,7 +221,8 @@ export async function generateIdeConfigs(projectDir = ".", options = {}) {
   const { log = () => {} } = options;
   const root = path.resolve(projectDir);
   const vscodeDir = path.join(root, ".vscode");
-  const runConfigDir = path.join(root, ".idea", "runConfigurations");
+  const ideaDir = path.join(root, ".idea");
+  const runConfigDir = path.join(ideaDir, "runConfigurations");
 
   await fs.mkdir(vscodeDir, { recursive: true });
   await fs.mkdir(runConfigDir, { recursive: true });
@@ -152,6 +240,14 @@ export async function generateIdeConfigs(projectDir = ".", options = {}) {
   const launchPath = path.join(vscodeDir, "launch.json");
   await writeIfChanged(launchPath, JSON.stringify(vscodeLaunch(), null, 2) + "\n");
   written.push(launchPath);
+
+  const jsconfigPath = path.join(root, "jsconfig.json");
+  await writeIfChanged(jsconfigPath, JSON.stringify(vscodeJsConfig(), null, 2) + "\n");
+  written.push(jsconfigPath);
+
+  const jsonSchemasPath = path.join(ideaDir, "jsonSchemas.xml");
+  await writeIfChanged(jsonSchemasPath, intellijJsonSchemas());
+  written.push(jsonSchemasPath);
 
   for (const action of IDE_ACTIONS) {
     const filePath = path.join(runConfigDir, action.id + ".xml");
