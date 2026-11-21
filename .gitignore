@@ -1,5 +1,6 @@
 node_modules/
 dist/
+minecraft-test/
 *.tmp-*
 *.bak-*
 .DS_Store

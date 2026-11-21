@@ -15,18 +15,26 @@
 
     npm install
 
-初始化资源包项目：
+`npm install` 会自动触发 `prepare` 脚本执行初始化，因此 IDE 导入项目时（WebStorm / VS Code 导入后通常会自动安装依赖）就已经完成脚手架，无需手动操作。也可以随时手动执行：
 
     npm run init
 
-将资源文件放入：
+初始化是幂等的：项目已存在 `mtr-resource-pack.config.json` 时会直接跳过，重复执行不会覆盖任何已有文件。
+
+初始化时会自动生成一套可直接构建的示例资源包与目录结构（已存在的文件不会被覆盖）：
 
     resource-pack/
-      pack.mcmeta          可选；缺少时会根据配置自动生成
-      pack.png             可选；资源包图标
+      pack.png                    示例图标（工具生成的 128x128 PNG）
       assets/
-        mtr/               MTR 命名空间资源
-        minecraft/         Minecraft 原版资源覆盖（按需使用）
+        mtr/                      MTR 命名空间资源（按配置的 namespace 生成）
+          lang/en_us.json         示例语言覆盖
+          textures/example.png    示例贴图（工具生成的 16x16 PNG）
+          models/                 模型目录（空，含 .gitkeep 占位）
+          sounds/                 音效目录（空，含 .gitkeep 占位）
+        minecraft/                Minecraft 原版资源覆盖（按需使用）
+      pack.mcmeta                 可选；缺少时会根据配置自动生成
+
+随后把自有资源放进 `resource-pack/` 覆盖或补充示例文件即可。
 
 检查配置和资源目录：
 
@@ -43,11 +51,60 @@
 
 ## 命令行
 
-    node src/cli.js init [directory]
+    node src/cli.js init [directory] [--if-missing]
+    node src/cli.js ide [directory]
     node src/cli.js validate [--config file]
     node src/cli.js build [--config file] [--no-archive]
+    node src/cli.js setup [--dir name] [--mc version] [--loader version] [--no-assets] [--proxy url]
+    node src/cli.js install [--config file] [--dir name] [--no-build]
+    node src/cli.js launch [--dir name] [--username name] [--memory 2G] [--java path] [--no-install] [--dry-run]
 
-自定义配置文件可通过 --config 指定。构建时使用 --no-archive 可以跳过 ZIP 输出。
+自定义配置文件可通过 --config 指定。构建时使用 --no-archive 可以跳过 ZIP 输出。初始化时使用 --if-missing 可在项目已初始化时静默跳过（IDE 自动执行 init 时使用这一形式）。
+
+## IDE 启动快捷按钮
+
+`init` 会同时生成 IDE 运行配置，`ide` 命令可随时重新生成，让 WebStorm / IntelliJ 与 VS Code 的启动栏直接出现“构建”和“运行测试”按钮：
+
+- `.vscode/tasks.json`、`.vscode/launch.json`：VS Code 的 Run and Debug 面板与任务列表（launch.json 通过 Node 调试器直接运行 `src/cli.js`，可在 `src/` 内下断点）
+- `.vscode/settings.json`：打开共享任务中的自动执行许可，使导入项目时自动运行 `init`
+- `.idea/runConfigurations/*.xml`：WebStorm / IntelliJ 的运行配置（npm 类型，随 VCS 共享，与 package.json 脚本联动）
+
+生成的动作与 npm 脚本一一对应：构建资源包（build）、下载测试客户端（setup）、安装资源包到测试客户端（install-pack）、启动测试客户端（launch）、运行单元测试（test）。重新执行 `npm run ide` 会原地刷新这些文件。
+
+导入项目时自动执行初始化由两条路径保证：VS Code 通过 `runOn: "folderOpen"` 的初始化任务，WebStorm / IntelliJ 通过导入后自动执行的 `npm install`（即 `prepare` 脚本）。两条路径都调用幂等的 `init --if-missing`，已初始化的项目会静默跳过。
+
+## 测试客户端自动化
+
+仓库不依赖 Gradle，全部自动化能力都由 Node.js 提供。setup 命令会用公开 API 组装一个可直接启动的 Minecraft 1.20.1 + Fabric 测试环境：
+
+- 从 Mojang 版本清单下载 Minecraft 1.20.1 客户端、全部库文件和资源文件（assets）
+- 从 Fabric Meta 解析并下载 Fabric Loader 及其依赖库
+- 从 Modrinth 下载 Fabric API、Architectury API（MTR 的必需运行时依赖），以及 MTR 相关模组（默认 ybOYitTg=MTR-ANTE、U75MCH6y=YMTR，均按指定版本 ID 固定）
+- 解压 LWJGL 等原生库（natives），并写入环境清单
+
+    npm run setup
+
+安装到 minecraft-test/ 目录，结构为标准启动器布局（versions/、libraries/、assets/、mods/）。可用 --no-assets 跳过体积较大的资源文件下载。
+
+启动测试客户端：
+
+    npm run launch
+
+launch 会复用 setup 下载的内容，拼装 classpath 与 JVM/游戏参数并调用本地 Java（需 Java 17+，可通过 JAVA_HOME 或 --java 指定）启动 Fabric 客户端。使用 --dry-run 可以只打印启动参数而不真正启动，便于排查。
+
+启动前会自动接入资源包，无需手动安装：
+
+1. 先执行一次构建，生成最新的 `dist/mtr-resource-pack.zip`；
+2. 把 ZIP 复制到 `minecraft-test/resourcepacks/`；
+3. 在 `minecraft-test/options.txt` 的 `resourcePacks` 中登记 `file/mtr-resource-pack.zip`（追加在列表末尾以获得最高优先级），使其进入已启用列表。
+
+因此每次 launch 加载的都是当前代码的构建产物。只想刷新客户端里的资源包而不启动游戏时，执行：
+
+    npm run install-pack
+
+install 同样会先构建再安装（用 --no-build 可改为安装现有构建）。如果希望启动时完全不改动客户端，使用 `launch --no-install`。
+
+Minecraft 版本、Fabric Loader 版本、测试目录名以及要安装的模组列表都定义在 src/core/environment.js，可按需调整。
 
 ## 配置说明
 
@@ -82,7 +139,13 @@
         metadata.js            pack.mcmeta 生成
         generator.js            构建与目录替换
         archive.js              ZIP 压缩
-        initializer.js          初始化项目
+        initializer.js          初始化项目（示例资源包 + IDE 配置）
+        sample.js               生成示例资源包与占位目录
+        ide.js                  生成 VS Code / WebStorm 运行配置
+        download.js            下载/校验/并发等通用工具
+        environment.js         下载并组装 Minecraft + Fabric 测试环境
+        installer.js            构建产物装入测试客户端并在 options.txt 中启用
+        launcher.js             拼装启动参数并启动测试客户端
     tests/
       core.test.js              核心逻辑测试
 

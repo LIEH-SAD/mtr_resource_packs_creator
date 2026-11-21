@@ -6,6 +6,9 @@ import path from "node:path";
 import {
   buildResourcePack,
   createPackMetadata,
+  generateIdeConfigs,
+  initializeProject,
+  installResourcePack,
   isSameOrInside,
   validateConfig
 } from "../src/index.js";
@@ -81,6 +84,120 @@ test("build copies source files and generates pack.mcmeta", async () => {
     assert.equal(metadata.pack.pack_format, 15);
     assert.equal(result.fileCount, 2);
     assert.equal(result.archivePath, null);
+  } finally {
+    await fs.rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("IDE configurations expose build and test shortcuts", async () => {
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mtr-ide-test-"));
+
+  try {
+    const result = await generateIdeConfigs(temporaryRoot);
+    const tasks = JSON.parse(await fs.readFile(path.join(temporaryRoot, ".vscode", "tasks.json"), "utf8"));
+    const launch = JSON.parse(await fs.readFile(path.join(temporaryRoot, ".vscode", "launch.json"), "utf8"));
+    const webstorm = await fs.readFile(path.join(temporaryRoot, ".idea", "runConfigurations", "build.xml"), "utf8");
+
+    assert.deepEqual(
+      tasks.tasks.map((task) => task.label),
+      [
+        "MTR: Initialize project",
+        "MTR: Build resource pack",
+        "MTR: Set up test client",
+        "MTR: Install into test client",
+        "MTR: Run test client",
+        "MTR: Run unit tests"
+      ]
+    );
+    assert.equal(tasks.tasks[0].runOptions.runOn, "folderOpen");
+    assert.equal(tasks.tasks[1].group.kind, "build");
+    assert.equal(tasks.tasks[5].group.kind, "test");
+
+    const settings = JSON.parse(await fs.readFile(path.join(temporaryRoot, ".vscode", "settings.json"), "utf8"));
+    assert.equal(settings["task.allowAutomaticTasks"], "on");
+
+    assert.equal(launch.configurations.length, 5);
+    assert.ok(launch.configurations.some((config) => config.name === "MTR: Run test client"));
+    assert.match(webstorm, /type="js\.build_tools\.npm"/);
+    assert.match(webstorm, /<script value="build" \/>/);
+    assert.equal(result.files.length, 8);
+  } finally {
+    await fs.rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("installing copies the pack into the test client and enables it", async () => {
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mtr-install-test-"));
+
+  try {
+    const init = await initializeProject(temporaryRoot);
+    const gameDir = path.join(temporaryRoot, "minecraft-test");
+    await fs.mkdir(gameDir, { recursive: true });
+    await fs.writeFile(
+      path.join(gameDir, "options.txt"),
+      'fov:0.0\nresourcePacks:["vanilla","file/other.zip"]\nlang:en_us\n',
+      "utf8"
+    );
+
+    const result = await installResourcePack({ projectDir: temporaryRoot, configPath: init.configPath });
+
+    assert.deepEqual(result.enabledPacks, ["vanilla", "file/other.zip", "file/mtr-resource-pack.zip"]);
+    await fs.access(path.join(result.resourcePacksDir, "mtr-resource-pack.zip"));
+
+    const options = await fs.readFile(path.join(gameDir, "options.txt"), "utf8");
+    assert.match(options, /resourcePacks:\["vanilla","file\/other\.zip","file\/mtr-resource-pack\.zip"\]/);
+    assert.match(options, /lang:en_us/);
+  } finally {
+    await fs.rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("installing is idempotent and creates options.txt when missing", async () => {
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mtr-install-twice-test-"));
+
+  try {
+    const init = await initializeProject(temporaryRoot);
+    const optionsPath = path.join(temporaryRoot, "minecraft-test", "options.txt");
+
+    const first = await installResourcePack({ projectDir: temporaryRoot, configPath: init.configPath });
+    assert.deepEqual(first.enabledPacks, ["vanilla", "file/mtr-resource-pack.zip"]);
+
+    const second = await installResourcePack({ projectDir: temporaryRoot, configPath: init.configPath });
+    assert.deepEqual(second.enabledPacks, ["vanilla", "file/mtr-resource-pack.zip"]);
+
+    const options = await fs.readFile(optionsPath, "utf8");
+    assert.equal(options.split("resourcePacks:").length - 1, 1);
+  } finally {
+    await fs.rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("initialisation seeds a buildable sample resource pack", async () => {
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mtr-init-test-"));
+
+  try {
+    const result = await initializeProject(temporaryRoot);
+    const packDir = path.join(temporaryRoot, "resource-pack");
+    const icon = await fs.readFile(path.join(packDir, "pack.png"));
+    const language = JSON.parse(await fs.readFile(path.join(packDir, "assets", "mtr", "lang", "en_us.json"), "utf8"));
+
+    assert.deepEqual([...icon.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    assert.equal(language["block.mtr.example"], "Example Block");
+    assert.equal(result.sampleFiles.length, 3);
+
+    await fs.access(path.join(packDir, "assets", "mtr", "models", ".gitkeep"));
+    await fs.access(path.join(packDir, "assets", "mtr", "sounds", ".gitkeep"));
+
+    assert.equal(await initializeProject(temporaryRoot, { ifMissing: true }), null);
+    await assert.rejects(() => initializeProject(temporaryRoot), /already exists/);
+
+    const config = JSON.parse(await fs.readFile(result.configPath, "utf8"));
+    const build = await buildResourcePack({ config, configPath: result.configPath, archiveEnabled: false });
+    const metadata = JSON.parse(await fs.readFile(path.join(build.outputDir, "pack.mcmeta"), "utf8"));
+
+    assert.equal(build.fileCount, 4);
+    assert.equal(metadata.pack.pack_format, config.pack.packFormat);
+    await fs.access(path.join(build.outputDir, "assets", "mtr", "textures", "example.png"));
   } finally {
     await fs.rm(temporaryRoot, { recursive: true, force: true });
   }

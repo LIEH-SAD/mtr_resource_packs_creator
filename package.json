@@ -8,16 +8,23 @@
     "mtr-pack": "src/cli.js"
   },
   "scripts": {
-    "init": "node src/cli.js init .",
+    "init": "node src/cli.js init --if-missing .",
+    "prepare": "node src/cli.js init --if-missing .",
+    "ide": "node src/cli.js ide",
     "validate": "node src/cli.js validate",
     "build": "node src/cli.js build",
+    "setup": "node src/cli.js setup",
+    "install-pack": "node src/cli.js install",
+    "launch": "node src/cli.js launch",
     "test": "node --test"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "archiver": "^7.0.1"
+    "adm-zip": "^0.5.18",
+    "archiver": "^7.0.1",
+    "undici": "^8.13.1"
   },
   "license": "MIT"
 }
