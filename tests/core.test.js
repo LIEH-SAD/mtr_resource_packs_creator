@@ -6,10 +6,15 @@ import path from "node:path";
 import {
   buildResourcePack,
   createPackMetadata,
+  decompiledDirName,
   generateIdeConfigs,
+  generateSources,
   initializeProject,
   installResourcePack,
   isSameOrInside,
+  parseSourceTargets,
+  toolDownloadUrl,
+  DECOMPILER_TOOLS,
   validateConfig
 } from "../src/index.js";
 
@@ -104,6 +109,7 @@ test("IDE configurations expose build and test shortcuts", async () => {
         "MTR: Initialize project",
         "MTR: Build resource pack",
         "MTR: Set up test client",
+        "MTR: Decompile Java sources",
         "MTR: Install into test client",
         "MTR: Run test client",
         "MTR: Run unit tests"
@@ -111,7 +117,7 @@ test("IDE configurations expose build and test shortcuts", async () => {
     );
     assert.equal(tasks.tasks[0].runOptions.runOn, "folderOpen");
     assert.equal(tasks.tasks[1].group.kind, "build");
-    assert.equal(tasks.tasks[5].group.kind, "test");
+    assert.equal(tasks.tasks[6].group.kind, "test");
 
     const settings = JSON.parse(await fs.readFile(path.join(temporaryRoot, ".vscode", "settings.json"), "utf8"));
     assert.equal(settings["task.allowAutomaticTasks"], "on");
@@ -134,11 +140,12 @@ test("IDE configurations expose build and test shortcuts", async () => {
     assert.match(jsonSchemas, /relativePathToSchema" value="syntax\/schemas\/eyecandy\.schema\.json"/);
     assert.match(jsonSchemas, /mappingKind" value="Pattern"/);
 
-    assert.equal(launch.configurations.length, 5);
+    assert.equal(launch.configurations.length, 6);
+    assert.ok(launch.configurations.some((config) => config.name === "MTR: Decompile Java sources"));
     assert.ok(launch.configurations.some((config) => config.name === "MTR: Run test client"));
     assert.match(webstorm, /type="js\.build_tools\.npm"/);
     assert.match(webstorm, /<script value="build" \/>/);
-    assert.equal(result.files.length, 10);
+    assert.equal(result.files.length, 11);
   } finally {
     await fs.rm(temporaryRoot, { recursive: true, force: true });
   }
@@ -185,6 +192,39 @@ test("installing is idempotent and creates options.txt when missing", async () =
 
     const options = await fs.readFile(optionsPath, "utf8");
     assert.equal(options.split("resourcePacks:").length - 1, 1);
+  } finally {
+    await fs.rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("source targets default to every target and accept an explicit list", () => {
+  assert.deepEqual(parseSourceTargets(undefined), ["minecraft", "mods"]);
+  assert.deepEqual(parseSourceTargets("all"), ["minecraft", "mods"]);
+  assert.deepEqual(parseSourceTargets("mods, minecraft"), ["mods", "minecraft"]);
+  assert.throws(() => parseSourceTargets("natives"), /Unknown source target/);
+});
+
+test("decompiled output directories are derived from the jar name", () => {
+  assert.equal(decompiledDirName(path.join("mods", "fabric-api-0.92.12+1.20.1.jar")), "fabric-api-0.92.12+1.20.1");
+  assert.equal(decompiledDirName("MTR-ANTE-1.1.0+1.20.1.JAR"), "MTR-ANTE-1.1.0+1.20.1");
+});
+
+test("decompiler tools resolve to runnable Maven Central artefacts", () => {
+  assert.equal(
+    toolDownloadUrl(DECOMPILER_TOOLS.vineflower),
+    "https://repo1.maven.org/maven2/org/vineflower/vineflower/1.12.0/vineflower-1.12.0.jar"
+  );
+  assert.equal(
+    toolDownloadUrl(DECOMPILER_TOOLS.specialSource),
+    "https://repo1.maven.org/maven2/net/md-5/SpecialSource/1.11.6/SpecialSource-1.11.6-shaded.jar"
+  );
+});
+
+test("generating sources without a test environment reports the missing setup", async () => {
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mtr-sources-test-"));
+
+  try {
+    await assert.rejects(() => generateSources({ projectDir: temporaryRoot }), /Run the setup command first/);
   } finally {
     await fs.rm(temporaryRoot, { recursive: true, force: true });
   }

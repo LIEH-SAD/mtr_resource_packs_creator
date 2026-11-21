@@ -15,4 +15,18 @@ export {
 } from "./core/environment.js";
 export { buildLaunchPlan, launchClient } from "./core/launcher.js";
 export { enableResourcePack, installResourcePack } from "./core/installer.js";
+export {
+  DECOMPILER_TOOLS,
+  decompileJar,
+  ensureDecompilerTools,
+  remapJar,
+  toolDownloadUrl
+} from "./core/decompiler.js";
+export {
+  DECOMPILED_DIR_NAME,
+  SOURCE_TARGETS,
+  decompiledDirName,
+  generateSources,
+  parseSourceTargets
+} from "./core/sources.js";
 export { downloadFile, fetchJson, mapLimit, setProxy } from "./core/download.js";

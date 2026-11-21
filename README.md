@@ -56,6 +56,7 @@
     node src/cli.js validate [--config file]
     node src/cli.js build [--config file] [--no-archive]
     node src/cli.js setup [--dir name] [--mc version] [--loader version] [--no-assets] [--proxy url]
+    node src/cli.js sources [--dir name] [--mc version] [--targets list] [--java path] [--proxy url] [--force]
     node src/cli.js install [--config file] [--dir name] [--no-build]
     node src/cli.js launch [--dir name] [--username name] [--memory 2G] [--java path] [--no-install] [--dry-run]
 
@@ -71,7 +72,7 @@
 - `.idea/runConfigurations/*.xml`：WebStorm / IntelliJ 的运行配置（npm 类型，随 VCS 共享，与 package.json 脚本联动）
 - `.idea/jsonSchemas.xml`：WebStorm / IntelliJ 的 JSON Schema 映射（随 VCS 共享）
 
-生成的动作与 npm 脚本一一对应：构建资源包（build）、下载测试客户端（setup）、安装资源包到测试客户端（install-pack）、启动测试客户端（launch）、运行单元测试（test）。重新执行 `npm run ide` 会原地刷新这些文件。
+生成的动作与 npm 脚本一一对应：构建资源包（build）、下载测试客户端（setup）、反编译 Java 源码（sources）、安装资源包到测试客户端（install-pack）、启动测试客户端（launch）、运行单元测试（test）。重新执行 `npm run ide` 会原地刷新这些文件。
 
 导入项目时自动执行初始化由两条路径保证：VS Code 通过 `runOn: "folderOpen"` 的初始化任务，WebStorm / IntelliJ 通过导入后自动执行的 `npm install`（即 `prepare` 脚本）。两条路径都调用幂等的 `init --if-missing`，已初始化的项目会静默跳过。
 
@@ -125,6 +126,43 @@ install 同样会先构建再安装（用 --no-build 可改为安装现有构建
 
 Minecraft 版本、Fabric Loader 版本、测试目录名以及要安装的模组列表都定义在 src/core/environment.js，可按需调整。
 
+## Java 源码反编译
+
+MTR 模组与 API 的源码不在仓库中，想在 IDE 里直接读 Java 源码时，用 `sources` 命令把测试客户端里的编译产物反编译成 `.java` 落盘，无需引入 Gradle：
+
+    npm run sources
+
+流程分两步：
+
+1. Minecraft 本体：先用 Mojang 官方映射（`client.txt`）反混淆混淆过的 `1.20.1.jar`，再反编译。否则只能得到 `a`/`b`/`c` 这样的名字。
+2. 模组：直接反编译 `minecraft-test/mods/` 下的每个 jar。
+
+反编译用两个独立的命令行工具完成，首次运行会从 Maven Central 下载到 `minecraft-test/.mtr-test/tools/`（不进版本库）：
+
+- [Vineflower](https://github.com/Vineflower/vineflower) 1.12.0：jar → `.java`，并把 `libraries/` 下的库作为 external 传入以补全签名
+- [SpecialSource](https://github.com/agaricusb/SpecialSource) 1.11.6：按官方映射重命名 jar 中的类
+
+产物位置（`minecraft-test/` 整体已被 `.gitignore` 忽略）：
+
+- `minecraft-test/decompiled/minecraft/`：反混淆后的 Minecraft 本体
+- `minecraft-test/decompiled/mods/<jar 名>/`：各模组
+
+命令是幂等的：`minecraft-test/.mtr-test/decompiled.json` 记录来源 jar 的大小与修改时间，未变化时直接跳过；需要强制重做时加 `--force`。只反编译其中一部分可以指定目标：
+
+    npm run sources -- --targets minecraft
+    npm run sources -- --targets mods
+
+`--targets` 支持 `minecraft`、`mods`、`all`（默认全部）。与 setup 一致，Java 可用 `--java` 或 JAVA_HOME 指定（需 Java 17+），网络可用 `--proxy` 指定。
+
+在 IDE 中查看：
+
+- 反编译结果落在项目树内的 `minecraft-test/decompiled/`，WebStorm 与 IntelliJ 都能直接展开并打开这些 `.java` 文件。
+- 需要注意 **WebStorm 本身不提供 Java 支持**，无法像 IntelliJ IDEA 那样在点击类名时即时反编译或跳转；WebStorm 中只能作为文件浏览。在 IDEA 中打开同一目录则可以使用常规的符号导航。
+- 模组 jar 中的 Minecraft 引用仍是 Fabric 的 intermediary 名称（如 `net.minecraft.class_310`），模组自身的类名与方法名是可读的；只有 Minecraft 本体经过官方映射反混淆。
+- `decompiled/` 下文件数量较大，如遇编辑器索引变慢，可在 IDE 中把该目录标记为排除（Excluded）。
+
+> 当前版本只覆盖 Minecraft 本体与模组。Java 库的官方 `-sources.jar` 下载、以及为 IntelliJ IDEA 生成 `.idea/libraries` 挂载配置尚未实现。
+
 ## 配置说明
 
 初始化后会创建 mtr-resource-pack.config.json。主要字段：
@@ -163,6 +201,8 @@ Minecraft 版本、Fabric Loader 版本、测试目录名以及要安装的模�
         ide.js                  生成 VS Code / WebStorm 运行配置与语法映射
         download.js            下载/校验/并发等通用工具
         environment.js         下载并组装 Minecraft + Fabric 测试环境
+        decompiler.js          下载 Vineflower / SpecialSource 并调用反编译
+        sources.js             反混淆并反编译测试客户端与模组
         installer.js            构建产物装入测试客户端并在 options.txt 中启用
         launcher.js             拼装启动参数并启动测试客户端
     tests/

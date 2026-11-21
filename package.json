@@ -14,6 +14,7 @@
     "validate": "node src/cli.js validate",
     "build": "node src/cli.js build",
     "setup": "node src/cli.js setup",
+    "sources": "node src/cli.js sources",
     "install-pack": "node src/cli.js install",
     "launch": "node src/cli.js launch",
     "test": "node --test"

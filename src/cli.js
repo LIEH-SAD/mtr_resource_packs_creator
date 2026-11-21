@@ -16,6 +16,7 @@ import {
 } from "./core/environment.js";
 import { launchClient } from "./core/launcher.js";
 import { installResourcePack } from "./core/installer.js";
+import { SOURCE_TARGETS, generateSources, parseSourceTargets } from "./core/sources.js";
 
 const currentFile = fileURLToPath(import.meta.url);
 const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === currentFile;
@@ -65,6 +66,7 @@ function printHelp() {
     "  node src/cli.js validate [--config file]",
     "  node src/cli.js build [--config file] [--no-archive]",
     "  node src/cli.js setup [--dir name] [--mc version] [--loader version] [--no-assets] [--proxy url]",
+    "  node src/cli.js sources [--dir name] [--mc version] [--targets list] [--java path] [--proxy url] [--force]",
     "  node src/cli.js install [--config file] [--dir name] [--no-build]",
     "  node src/cli.js launch [--dir name] [--username name] [--memory 2G] [--java path] [--no-install] [--dry-run]",
     "",
@@ -74,6 +76,7 @@ function printHelp() {
     "  validate   Check the project configuration and source directory",
     "  build      Generate the resource-pack directory and optional ZIP",
     "  setup      Download a Minecraft 1.20.1 + Fabric test client with the MTR mods",
+    "  sources    Deobfuscate and decompile the test client and its mods into decompiled/",
     "  install    Copy the built pack into the test client and enable it",
     "  launch     Build, install the pack and start the test client",
     "",
@@ -85,6 +88,8 @@ function printHelp() {
     "  --loader   Fabric loader version (default: " + FABRIC_LOADER_VERSION + ")",
     "  --no-assets   Skip downloading Minecraft asset files",
     "  --proxy    HTTP(S) proxy URL, e.g. http://127.0.0.1:7897 (default: HTTPS_PROXY env)",
+    "  --targets  Comma-separated source targets: " + [...SOURCE_TARGETS, "all"].join(", "),
+    "  --force    Regenerate the decompiled sources even when they are up to date",
     "  --no-build    Install the existing build instead of rebuilding",
     "  --no-install  Launch without rebuilding or installing the resource pack",
     "  --username In-game player name for the test client",
@@ -143,6 +148,29 @@ async function run() {
       console.log("  mod: " + mod.file + "  (" + mod.version + ")");
     }
     console.log("Run \"node src/cli.js launch\" to start the test client.");
+    return;
+  }
+
+  if (command === "sources") {
+    await ensureProject(process.cwd());
+
+    const summary = await generateSources({
+      projectDir: process.cwd(),
+      gameDirName: readOption(args, "--dir") || DEFAULT_GAME_DIR_NAME,
+      minecraftVersion: readOption(args, "--mc") || MINECRAFT_VERSION,
+      targets: parseSourceTargets(readOption(args, "--targets")),
+      java: readOption(args, "--java"),
+      proxy: readOption(args, "--proxy"),
+      force: args.includes("--force"),
+      log: (message) => console.log(message)
+    });
+
+    console.log("");
+    console.log("Java sources generated: " + summary.decompiledDir);
+    for (const module of summary.modules) {
+      console.log("  " + module.label + "  (" + module.files + " java files)  ->  " + path.relative(summary.gameDir, module.outputDir));
+    }
+    console.log("Open the decompiled/ folder in the IDE to read the sources.");
     return;
   }
 

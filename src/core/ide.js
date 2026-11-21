@@ -8,6 +8,7 @@ import path from "node:path";
 export const IDE_ACTIONS = [
   { id: "build", label: "Build resource pack", script: "build", cliArgs: ["build"] },
   { id: "setup", label: "Set up test client", script: "setup", cliArgs: ["setup"] },
+  { id: "sources", label: "Decompile Java sources", script: "sources", cliArgs: ["sources"] },
   { id: "install", label: "Install into test client", script: "install-pack", cliArgs: ["install"] },
   { id: "launch", label: "Run test client", script: "launch", cliArgs: ["launch"] },
   { id: "test", label: "Run unit tests", script: "test", cliArgs: null }
